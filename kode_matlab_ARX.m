@@ -1,48 +1,39 @@
-% Program MATLAB untuk Penyetelan PID berdasarkan Fungsi Transfer
-% Fungsi Transfer: G(s) = (0.2088s^2 + 1.315s + 1.686) / (s^3 + 0.6671s^2 + 9.981s + 0.01418)
+% ===============================
+% Langkah 1: Input Data dan Sinkronisasi
+% ===============================
+U = [7, 2.5, -7, -1, 2.5, -7, 5, 2.5, -1, 7, 2.5, -7, 1, -5, 2.5, -7, 5, -1, 7, 2.5, -5, -1, 5, -2.5, -7, 1, 7, 2.5, -5, -1, 7, 2.5, -7, 1, -2.5, -5, 5, 7, 2.5, -7, 1, 2.5, -5, -1, 7, 2.5, -7, 1, -2.5, -5, 5, 7, 2.5, -7, 1, 2.5, -5, -1, 7, 2.5, -7, 1, -2.5, -5, 5, 7, 2.5, -7, 1, 2.5, -5, -1, 7, 2.5, -7, 1, -2.5, -5, 5, 7, 2.5, -7, 1, 2.5, -5, -1, 7, 2.5, -7, 1, 2.5, -5, -1, 7, 2.5, -7, 1];
+Y1 = [115, 94.5, 112, 96, 125.5, 103, 95, 104.5, 114, 128, 96.5, 110, 101, 120, 108.5, 84, 117, 97, 127, 111.5, 90, 117, 108, 121.5, 100, 94, 123, 101.5, 117, 104, 118, 98.5, 107, 102, 116.5, 99, 97, 120, 100.5, 113, 107, 127.5, 104, 93, 124, 104.5, 108, 101, 120.5, 103, 96, 119, 99.5, 114, 106, 121.5, 105, 92, 123, 103.5, 117, 108, 92.5, 113, 108, 97, 116.5, 92, 123, 108.5, 106, 95, 127, 106.5, 110, 103, 122.5, 104, 99, 120, 100.5, 114, 106, 121.5, 95, 115, 99, 110.5, 116, 108, 92.5, 113, 108, 97, 114.5, 90, 121, 108.5, 106, 93];
+Y2 = [108, 92, 119, 97, 123, 110, 90, 102, 115, 121, 94, 117, 100, 125, 106, 91, 112, 98, 120, 109, 95, 118, 103, 124, 107, 93, 116, 99, 122, 105, 111, 96, 114, 101, 119, 104, 92, 113, 98, 120, 106, 125, 109, 94, 117, 102, 115, 100, 123, 108, 91, 112, 97, 121, 105, 119, 110, 93, 116, 101, 124, 107, 95, 118, 103, 90, 114, 99, 122, 106, 111, 96, 120, 104, 117, 102, 125, 109, 94, 113, 98, 121, 105, 119, 100, 116, 92, 108, 123, 107, 95, 118, 103, 90, 112, 97, 120, 106, 111, 94];
 
-% Langkah 1: Definisikan fungsi transfer sistem
-num = [0.2088 1.315 1.686]; % Numerator
-den = [1 0.6671 9.981 0.01418]; % Denominator
-G = tf(num, den);
+% Sinkronisasi Panjang Data
+N = min([length(U), length(Y1), length(Y2)]);
+U = U(1:N);
+Y_avg = (Y1(1:N) + Y2(1:N)) / 2;
 
-% Langkah 2: Hitung parameter awal menggunakan pendekatan IMC sederhana
-% Aproksimasi konstanta waktu dominan berdasarkan koefisien
-% Asumsi tau1 dan tau2 dari kutub dominan (perkiraan berdasarkan orde)
-tau1 = 0.1; % Konstanta waktu awal (estimasi)
-tau2 = 0.1; % Konstanta waktu awal (estimasi)
-tau_c = 1;  % Waktu closed-loop desired (pilih 1-2 kali konstanta waktu)
+% Waktu Sampling
+Ts = 1; % detik
 
-% Gain statis (DC gain) diperkirakan dari rasio konstanta
-K = dcgain(G); % Hitung gain statis sebenarnya
+% Buat Objek Data Identifikasi
+data_id = iddata(Y_avg', U', Ts); % baris = waktu, kolom = nilai
+% ===============================
+% Langkah 2: Estimasi Model ARX
+% ===============================
+na = 2; % orde dari A(q) = output (autoregressive)
+nb = 2; % orde dari B(q) = input
+nk = 1; % delay input terhadap output (jumlah waktu tunda)
 
-% Parameter IMC
-Kp = (1/K) * (tau1 + tau2) / (2*tau_c + tau1 + tau2);
-Ti = tau1 + tau2;
-Td = (tau1 * tau2) / (tau1 + tau2);
+% Estimasi ARX
+model_arx = arx(data_id, [na nb nk]);
+% ===============================
+% Langkah 3: Konversi ke Fungsi Alih
+% ===============================
+% Model dalam domain z (diskrit)
+model_tf_z = tf(model_arx);
 
-% Konversi ke bentuk PID standar
-Ki = Kp / Ti;
-Kd = Kp * Td;
-
-% Buat objek PID
-C = pid(Kp, Ki, Kd);
-
-% Langkah 3: Simulasi sistem tertutup
-T = feedback(G*C, 1); % Sistem tertutup dengan umpan balik unity
-
-% Langkah 4: Analisis respons
-% Plot respons langkah
-figure;
-step(T);
-title('Respons Langkah Sistem Tertutup dengan PID');
-xlabel('Waktu (detik)');
-ylabel('Amplitudo');
-grid on;
-
-% Tampilkan informasi
-disp('Parameter PID Awal (IMC):');
-disp(['Kp = ', num2str(Kp)]);
-disp(['Ki = ', num2str(Ki)]);
-disp(['Kd = ', num2str(Kd)]);
-disp('Catatan: Sesuaikan parameter jika respons tidak memuaskan.');
+% Konversi ke domain s (kontinu) menggunakan zero-order hold (ZOH)
+model_tf_s = d2c(model_tf_z, 'zoh');
+% ===============================
+% Langkah 4: Tampilkan Fungsi Alih
+% ===============================
+disp('=== Fungsi Alih H(s) dari Sistem (ARX-based) ===');
+model_tf_s
